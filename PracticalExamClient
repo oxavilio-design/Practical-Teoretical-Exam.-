@@ -1,0 +1,46 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+local remotesFolder = ReplicatedStorage:WaitForChild("PracticalExamRemotes")
+local stateRemote = remotesFolder:WaitForChild("PracticalExamStateEvent")
+
+local statusGui = playerGui:WaitForChild("PracticalExamStatusGui")
+local statusLabel = statusGui:WaitForChild("Frame"):WaitForChild("StatusLabel")
+
+local function setGuiEnabled(guiName, enabled)
+	local gui = playerGui:FindFirstChild(guiName)
+	if gui and gui:IsA("ScreenGui") then
+		gui.Enabled = enabled
+	end
+end
+
+statusGui.Enabled = false
+
+stateRemote.OnClientEvent:Connect(function(packet)
+	if typeof(packet) ~= "table" then
+		return
+	end
+
+	local action = packet.Action
+	local payload = packet.Payload
+
+	if action == "SetStatus" then
+		statusGui.Enabled = true
+		statusLabel.Text = tostring(payload or "")
+	elseif action == "ShowGui" then
+		setGuiEnabled(tostring(payload), true)
+		if payload == "PracticalExamStatusGui" then
+			statusGui.Enabled = true
+		end
+	elseif action == "HideGui" then
+		setGuiEnabled(tostring(payload), false)
+		if payload == "PracticalExamStatusGui" then
+			statusGui.Enabled = false
+		end
+	elseif action == "ClearStatus" then
+		statusLabel.Text = ""
+	end
+end)
