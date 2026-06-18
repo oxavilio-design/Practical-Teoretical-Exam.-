@@ -1,0 +1,426 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
+
+local localPlayer = Players.LocalPlayer
+local playerGui = localPlayer:WaitForChild("PlayerGui")
+
+local examGui = playerGui:WaitForChild("TheoreticalExamGui")
+local resultGui = playerGui:WaitForChild("TheoryExamResultGui")
+local notEnoughMoneyGui = playerGui:WaitForChild("NotEnoughMoneyGui")
+
+local frame = examGui:WaitForChild("Frame")
+local imageFrame = frame:WaitForChild("Image")
+local imageLabel = imageFrame:WaitForChild("ImageLabel")
+
+local timeFrame = frame:WaitForChild("Time")
+local timeBar = timeFrame:WaitForChild("TimeBar")
+local timeLabel = timeFrame:WaitForChild("TimeLabel")
+
+local optionFrame = frame:WaitForChild("option")
+local yesFrame = optionFrame:WaitForChild("YesFrame")
+local noFrame = optionFrame:WaitForChild("NoFrame")
+local aFrame = optionFrame:WaitForChild("AFrame")
+local bFrame = optionFrame:WaitForChild("BFrame")
+local cFrame = optionFrame:WaitForChild("CFrame")
+
+local yesButton = yesFrame:WaitForChild("YesButton")
+local noButton = noFrame:WaitForChild("NoButton")
+local aButton = aFrame:WaitForChild("AButton")
+local bButton = bFrame:WaitForChild("BButton")
+local cButton = cFrame:WaitForChild("CButton")
+
+local aLabel = aFrame:WaitForChild("TextLabel")
+local bLabel = bFrame:WaitForChild("TextLabel")
+local cLabel = cFrame:WaitForChild("TextLabel")
+
+local endButton = optionFrame:WaitForChild("EndButton")
+local nextButton = optionFrame:WaitForChild("NextButton")
+
+local questFrame = frame:WaitForChild("quest")
+local questLabel = questFrame:WaitForChild("questLabel")
+
+local questA = frame:WaitForChild("Quest_a")
+local questB = frame:WaitForChild("Quest_b")
+local pointLabel = frame:WaitForChild("point")
+
+local endExamFrame = frame:WaitForChild("EndExamFrame")
+local yesEndButton = endExamFrame:WaitForChild("YesEndButton")
+local noEndButton = endExamFrame:WaitForChild("NoEndButton")
+
+local resultFrame = resultGui:WaitForChild("ResultFrame")
+local resultLabel = resultFrame:WaitForChild("ResultLabel")
+
+local remotesFolder = ReplicatedStorage:WaitForChild("TheoreticalExamRemotes")
+local examClientEvent = remotesFolder:WaitForChild("ExamClientEvent")
+local examServerEvent = remotesFolder:WaitForChild("ExamServerEvent")
+
+local DEFAULT_IMAGE = "rbxasset://textures/ui/GuiImagePlaceholder.png"
+local MAX_BAR_SIZE = UDim2.new(0.291, 0, 0.044, 0)
+
+local currentSessionId = ""
+local currentQuestionToken = 0
+local currentQuestionId = 0
+local currentQuestionDeadline = 0
+local currentTimeLimit = 0
+local currentTotalQuestions = 0
+local currentAnsweredQuestions = 0
+local currentBasicAnswered = 0
+local currentBasicTotal = 0
+local currentSpecialistAnswered = 0
+local currentSpecialistTotal = 0
+local currentScorePoints = 0
+local currentTotalPoints = 0
+
+local examOpen = false
+local timerRunning = false
+local activeTween = nil
+local nextRequestLock = false
+local selectedAnswer = nil
+local lastSentAnswer = nil
+local resultToken = 0
+local moneyToken = 0
+
+local function initializeGuis()
+	examGui.Enabled = false
+	resultGui.Enabled = false
+	notEnoughMoneyGui.Enabled = false
+	endExamFrame.Visible = false
+	timeBar.Size = MAX_BAR_SIZE
+end
+
+local function formatClock(seconds)
+	seconds = math.max(0, math.floor(seconds + 0.5))
+	local minutes = math.floor(seconds / 60)
+	local remainingSeconds = seconds % 60
+	return string.format("%d:%02d", minutes, remainingSeconds)
+end
+
+local function getServerTime()
+	local ok, value = pcall(function() return Workspace:GetServerTimeNow() end)
+	if ok and typeof(value) == "number" then return value end
+	return os.clock()
+end
+
+local function stopTimer()
+	timerRunning = false
+	if activeTween then
+		activeTween:Cancel()
+		activeTween = nil
+	end
+end
+
+local function hideEndConfirmation()
+	endExamFrame.Visible = false
+end
+
+local function setButtonsEnabled(isEnabled)
+	yesButton.Active = isEnabled
+	noButton.Active = isEnabled
+	aButton.Active = isEnabled
+	bButton.Active = isEnabled
+	cButton.Active = isEnabled
+	nextButton.Active = isEnabled
+	endButton.Active = isEnabled
+
+	yesButton.AutoButtonColor = isEnabled
+	noButton.AutoButtonColor = isEnabled
+	aButton.AutoButtonColor = isEnabled
+	bButton.AutoButtonColor = isEnabled
+	cButton.AutoButtonColor = isEnabled
+	nextButton.AutoButtonColor = isEnabled
+	endButton.AutoButtonColor = isEnabled
+end
+
+local function applySelectionVisuals(answer)
+	yesButton.BackgroundTransparency = 1
+	noButton.BackgroundTransparency = 1
+	aButton.BackgroundTransparency = 1
+	bButton.BackgroundTransparency = 1
+	cButton.BackgroundTransparency = 1
+
+	if answer == true then
+		yesButton.BackgroundTransparency = 0.75
+	elseif answer == false then
+		noButton.BackgroundTransparency = 0.75
+	elseif answer == "A" then
+		aButton.BackgroundTransparency = 0.75
+	elseif answer == "B" then
+		bButton.BackgroundTransparency = 0.75
+	elseif answer == "C" then
+		cButton.BackgroundTransparency = 0.75
+	end
+end
+
+local function updateProgressLabels()
+	questA.Text = string.format("%d z %d", currentBasicAnswered, currentBasicTotal)
+	questB.Text = string.format("%d z %d", currentSpecialistAnswered, currentSpecialistTotal)
+	pointLabel.Text = string.format(" Punkty: %d z %d", currentScorePoints, currentTotalPoints)
+end
+
+local function startTimer(deadline, timeLimit)
+	stopTimer()
+
+	currentQuestionDeadline = deadline
+	currentTimeLimit = timeLimit
+
+	local remaining = math.max(0, deadline - getServerTime())
+	local scale = timeLimit > 0 and (MAX_BAR_SIZE.X.Scale * (remaining / timeLimit)) or 0
+	timeBar.Size = UDim2.new(math.clamp(scale, 0, MAX_BAR_SIZE.X.Scale), 0, MAX_BAR_SIZE.Y.Scale, 0)
+
+	if remaining <= 0 then
+		timeLabel.Text = string.format("Czas %s z %s s", formatClock(0), formatClock(timeLimit))
+		return
+	end
+
+	activeTween = TweenService:Create(
+		timeBar,
+		TweenInfo.new(remaining, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
+		{ Size = UDim2.new(0, 0, MAX_BAR_SIZE.Y.Scale, 0) }
+	)
+
+	activeTween:Play()
+	timerRunning = true
+
+	task.spawn(function()
+		while timerRunning do
+			local liveRemaining = math.max(0, currentQuestionDeadline - getServerTime())
+			timeLabel.Text = string.format("Czas %s z %s s", formatClock(liveRemaining), formatClock(currentTimeLimit))
+			if liveRemaining <= 0 then break end
+			task.wait(0.1)
+		end
+	end)
+end
+
+local function showResult(message)
+	resultToken += 1
+	local token = resultToken
+
+	resultLabel.Text = message
+	resultGui.Enabled = true
+
+	task.delay(8, function()
+		if resultToken == token then
+			resultGui.Enabled = false
+		end
+	end)
+end
+
+local function showNotEnoughMoney()
+	moneyToken += 1
+	local token = moneyToken
+
+	notEnoughMoneyGui.Enabled = true
+
+	task.delay(5, function()
+		if moneyToken == token then
+			notEnoughMoneyGui.Enabled = false
+		end
+	end)
+end
+
+local function setQuestionMode(questionType)
+	if questionType == "Basic" then
+		yesFrame.Visible = true
+		noFrame.Visible = true
+		aFrame.Visible = false
+		bFrame.Visible = false
+		cFrame.Visible = false
+	else
+		yesFrame.Visible = false
+		noFrame.Visible = false
+		aFrame.Visible = true
+		bFrame.Visible = true
+		cFrame.Visible = true
+	end
+end
+
+local function renderQuestion(payload)
+	currentSessionId = tostring(payload.sessionId or "")
+	currentQuestionToken = tonumber(payload.questionToken) or 0
+	currentQuestionId = tonumber(payload.questionId) or 0
+	currentQuestionDeadline = tonumber(payload.deadline) or getServerTime()
+	currentTimeLimit = tonumber(payload.timeLimit) or 0
+
+	examGui.Enabled = true
+	examOpen = true
+	hideEndConfirmation()
+
+	questLabel.Text = tostring(payload.text or "")
+	imageLabel.Image = tostring(payload.imageId or DEFAULT_IMAGE)
+
+	currentTotalQuestions = tonumber(payload.totalQuestions) or 0
+	currentAnsweredQuestions = tonumber(payload.answeredQuestions) or 0
+	currentBasicAnswered = tonumber(payload.basicAnswered) or 0
+	currentBasicTotal = tonumber(payload.basicTotal) or 0
+	currentSpecialistAnswered = tonumber(payload.specialistAnswered) or 0
+	currentSpecialistTotal = tonumber(payload.specialistTotal) or 0
+	currentScorePoints = tonumber(payload.scorePoints) or 0
+	currentTotalPoints = tonumber(payload.totalPoints) or 0
+
+	setQuestionMode(tostring(payload.type or "Basic"))
+
+	if payload.type == "Specialist" and typeof(payload.options) == "table" then
+		aLabel.Text = tostring(payload.options.A or "A")
+		bLabel.Text = tostring(payload.options.B or "B")
+		cLabel.Text = tostring(payload.options.C or "C")
+	else
+		aLabel.Text = "A"
+		bLabel.Text = "B"
+		cLabel.Text = "C"
+	end
+
+	selectedAnswer = payload.selectedAnswer
+	lastSentAnswer = nil
+
+	applySelectionVisuals(selectedAnswer)
+	updateProgressLabels()
+	setButtonsEnabled(true)
+
+	local currentQuestionNumber = currentAnsweredQuestions + 1
+	endButton.Visible = currentQuestionNumber < currentTotalQuestions
+
+	startTimer(currentQuestionDeadline, currentTimeLimit)
+	nextRequestLock = false
+end
+
+local function sendSelection(answer)
+	if not examOpen then return end
+
+	selectedAnswer = answer
+	applySelectionVisuals(selectedAnswer)
+
+	if lastSentAnswer == answer then return end
+	lastSentAnswer = answer
+
+	examServerEvent:FireServer("SelectAnswer", {
+		sessionId = currentSessionId,
+		questionToken = currentQuestionToken,
+		questionId = currentQuestionId,
+		selectedAnswer = answer,
+	})
+end
+
+local function requestNextQuestion()
+	if not examOpen or nextRequestLock then return end
+	nextRequestLock = true
+
+	examServerEvent:FireServer("RequestNext", {
+		sessionId = currentSessionId,
+		questionToken = currentQuestionToken,
+		questionId = currentQuestionId,
+	})
+end
+
+local function requestEndExam()
+	if not examOpen then return end
+	hideEndConfirmation()
+
+	examServerEvent:FireServer("RequestEnd", {
+		sessionId = currentSessionId,
+	})
+end
+
+yesButton.MouseButton1Click:Connect(function() sendSelection(true) end)
+noButton.MouseButton1Click:Connect(function() sendSelection(false) end)
+aButton.MouseButton1Click:Connect(function() sendSelection("A") end)
+bButton.MouseButton1Click:Connect(function() sendSelection("B") end)
+cButton.MouseButton1Click:Connect(function() sendSelection("C") end)
+
+nextButton.MouseButton1Click:Connect(requestNextQuestion)
+
+endButton.MouseButton1Click:Connect(function()
+	if not examOpen then return end
+	if currentAnsweredQuestions >= currentTotalQuestions and currentTotalQuestions > 0 then
+		requestEndExam()
+	else
+		endExamFrame.Visible = true
+	end
+end)
+
+yesEndButton.MouseButton1Click:Connect(requestEndExam)
+noEndButton.MouseButton1Click:Connect(hideEndConfirmation)
+
+examClientEvent.OnClientEvent:Connect(function(action, payload)
+	if type(action) ~= "string" then return end
+
+	if action == "Open" then
+		if type(payload) ~= "table" then return end
+		currentSessionId = tostring(payload.sessionId or "")
+		currentTotalQuestions = tonumber(payload.totalQuestions) or 0
+		currentTotalPoints = tonumber(payload.totalPoints) or 0
+		currentScorePoints = tonumber(payload.scorePoints) or 0
+		currentBasicTotal = tonumber(payload.basicTotal) or 0
+		currentSpecialistTotal = tonumber(payload.specialistTotal) or 0
+
+		examGui.Enabled = true
+		examOpen = true
+		hideEndConfirmation()
+		setButtonsEnabled(true)
+		updateProgressLabels()
+
+	elseif action == "Question" then
+		if typeof(payload) == "table" then
+			renderQuestion(payload)
+		end
+
+	elseif action == "SelectionUpdated" then
+		if typeof(payload) == "table" then
+			selectedAnswer = payload.selectedAnswer
+			applySelectionVisuals(selectedAnswer)
+		end
+
+	elseif action == "NotEnoughMoney" then
+		examOpen = false
+		stopTimer()
+		hideEndConfirmation()
+		examGui.Enabled = false
+		showNotEnoughMoney()
+
+	elseif action == "AlreadyPassed" then
+		examOpen = false
+		stopTimer()
+		hideEndConfirmation()
+		examGui.Enabled = false
+		showResult("Zdano już egzamin teoretyczny. Udaj się do pojazdu, aby rozpocząć egzamin praktyczny.")
+
+	elseif action == "Blocked" then
+		examOpen = false
+		stopTimer()
+		hideEndConfirmation()
+		examGui.Enabled = false
+
+		if typeof(payload) == "table" then
+			local reason = tostring(payload.reason or "Blocked")
+			if reason == "DataUnavailable" then
+				showResult("Nie udało się pobrać danych egzaminu. Spróbuj ponownie później.")
+			elseif reason == "NoQuestionsAvailable" then
+				showResult("Brak pytań w puli egzaminacyjnej.")
+			elseif reason == "InsufficientQuestionPool" then
+				showResult("Pula pytań jest zbyt mała, aby uruchomić egzamin.")
+			elseif reason == "EconomyUnavailable" then
+				showResult("System płatności jest chwilowo niedostępny.")
+			else
+				showResult("Egzamin nie mógł zostać uruchomiony.")
+			end
+		end
+
+	elseif action == "Finished" then
+		examOpen = false
+		stopTimer()
+		hideEndConfirmation()
+		setButtonsEnabled(false)
+		examGui.Enabled = false
+		nextRequestLock = false
+		lastSentAnswer = nil
+
+		if typeof(payload) == "table" and payload.passed then
+			showResult("Gratulacje. Wynik jest pozytywny i możesz przystąpić do części praktycznej.")
+		else
+			showResult("Niestety nie uzyskałeś wymaganej liczby punktów. Spróbuj ponownie.")
+		end
+	end
+end)
+
+initializeGuis()
