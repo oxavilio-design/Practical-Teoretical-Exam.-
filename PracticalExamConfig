@@ -1,0 +1,81 @@
+local Config = {}
+
+Config.ExamFee = 500
+Config.MaxMistakes = 3
+
+Config.TheoryStoreName = "TheoreticalExamProgress_v1"
+Config.PracticalStoreName = "PracticalExamPassed_v1"
+
+Config.CourseFolderName = "DrivingExam"
+Config.VehicleTemplateName = "PracticalExamVehicle"
+Config.VehicleSpawnPartName = "ExamVehicleSpawn"
+
+Config.StartNpcName = "PracticalExamNPC"
+Config.StartPromptName = "PracticalExamPrompt"
+
+Config.StatusRemoteName = "PracticalExamStateEvent"
+
+Config.StatusGuiName = "PracticalExamStatusGui"
+Config.EventGuiName = "PracticalExamEventGui"
+Config.NotEnoughMoneyGuiName = "NotEnoughMoneyGui"
+
+Config.PointNames = {
+	A = "Exam_A",
+	B = "Exam_B",
+	C = "Exam_C",
+	D = "Exam_D",
+	E = "Exam_E",
+	F = "Exam_F",
+	Left = "Exam_Left",
+	Right = "Exam_Right",
+}
+
+Config.Tags = {
+	SolidLine = "ExamLine",
+	Cone = "ExamCone",
+	LeftTurnCheck = "LeftTurnCheck",
+	RightTurnCheck = "RightTurnCheck",
+	ParkingZone = "ParkingZone",
+}
+
+Config.ControlNames = {
+	LeftIndicator = { "LeftIndicator", "LeftSignal", "LeftBlinker", "Left" },
+	RightIndicator = { "RightIndicator", "RightSignal", "RightBlinker", "Right" },
+	HazardLights = { "HazardLights", "Hazards", "Hazard" },
+	HandBrake = { "HandBrake", "ParkingBrake", "Handbrake" },
+	EngineOn = { "EngineOn", "IgnitionOn" },
+}
+
+Config.PreCheckTasks = {
+	{
+		Id = "LeftIndicator",
+		Instruction = "Turn on the left indicator.",
+		Expected = true,
+	},
+	{
+		Id = "RightIndicator",
+		Instruction = "Turn on the right indicator.",
+		Expected = true,
+	},
+	{
+		Id = "HazardLights",
+		Instruction = "Turn on the hazard lights.",
+		Expected = true,
+	},
+	{
+		Id = "HandBrake",
+		Instruction = "Engage the handbrake.",
+		Expected = true,
+	},
+}
+
+Config.HeartbeatStep = 0.12
+Config.ZoneDebounce = 0.75
+
+Config.PreCheckMoveTolerance = 1.5
+Config.MoveSpeedTolerance = 4
+Config.RollbackTolerance = 2.5
+
+Config.CitySpeedLimitStudsPerSecond = 55
+
+return Config
