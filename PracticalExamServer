@@ -1,0 +1,12 @@
+local PracticalExamService = require(
+	script.Parent.PracticalExam.PracticalExamService
+)
+
+PracticalExamService.Start()
+
+local npc = workspace:WaitForChild("PracticalExamNPC")
+local prompt = npc.HumanoidRootPart:WaitForChild("PracticalExamPrompt")
+
+prompt.Triggered:Connect(function(player)
+	PracticalExamService.RequestStartExam(player)
+end)
