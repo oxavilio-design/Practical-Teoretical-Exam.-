@@ -1,0 +1,576 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
+local DataStoreService = game:GetService("DataStoreService")
+local Workspace = game:GetService("Workspace")
+
+local Config = require(ServerScriptService:WaitForChild("TheoreticalExamConfig"))
+local QuestionsModule = require(ServerScriptService:WaitForChild("TheoreticalExamQuestions"))
+
+local rng = Random.new()
+local examStore = DataStoreService:GetDataStore(Config.DataStoreName)
+
+-- Ensure remotes exist securely
+local remotesFolder = ReplicatedStorage:FindFirstChild(Config.RemoteFolderName)
+if not remotesFolder then
+	remotesFolder = Instance.new("Folder")
+	remotesFolder.Name = Config.RemoteFolderName
+	remotesFolder.Parent = ReplicatedStorage
+end
+
+local clientEvent = remotesFolder:FindFirstChild(Config.ClientEventName)
+if not clientEvent then
+	clientEvent = Instance.new("RemoteEvent")
+	clientEvent.Name = Config.ClientEventName
+	clientEvent.Parent = remotesFolder
+end
+
+local serverEvent = remotesFolder:FindFirstChild(Config.ServerEventName)
+if not serverEvent then
+	serverEvent = Instance.new("RemoteEvent")
+	serverEvent.Name = Config.ServerEventName
+	serverEvent.Parent = remotesFolder
+end
+
+local npc = Workspace:WaitForChild(Config.NpcName)
+
+local function getServerTime()
+	local ok, value = pcall(function() return Workspace:GetServerTimeNow() end)
+	if ok and typeof(value) == "number" then return value end
+	return os.clock()
+end
+
+local function cloneOptions(options)
+	if type(options) ~= "table" then return nil end
+	local clone = {}
+	for key, value in pairs(options) do
+		clone[key] = value
+	end
+	return clone
+end
+
+local function shuffle(array)
+	for index = #array, 2, -1 do
+		local swapIndex = rng:NextInteger(1, index)
+		array[index], array[swapIndex] = array[swapIndex], array[index]
+	end
+end
+
+local function getTimeLimit(questionType)
+	return questionType == "Specialist" and Config.SpecialistTimeLimit or Config.BasicTimeLimit
+end
+
+local function normalizeQuestion(question)
+	if type(question) ~= "table" then return nil end
+
+	local questionType = question.Type
+	if questionType ~= "Basic" and questionType ~= "Specialist" then return nil end
+
+	local id = tonumber(question.Id)
+	local text = tostring(question.Text or "")
+	if not id or text == "" then return nil end
+
+	local points = tonumber(question.Points)
+	if points == nil then
+		points = (questionType == "Basic") and 2 or 3
+	end
+
+	return {
+		Id = id,
+		Text = text,
+		Type = questionType,
+		Points = math.max(1, math.floor(points + 0.5)),
+		ImageId = (type(question.ImageId) == "string" and question.ImageId ~= "") and question.ImageId or Config.DefaultImage,
+		Options = cloneOptions(question.Options),
+		CorrectAnswer = question.CorrectAnswer,
+	}
+end
+
+local function answersMatch(question, left, right)
+	if question.Type == "Basic" then
+		return type(left) == "boolean" and type(right) == "boolean" and left == right
+	end
+	return type(left) == "string" and type(right) == "string" and left == right
+end
+
+local function selectionIsValid(question, answer)
+	if question.Type == "Basic" then
+		return type(answer) == "boolean"
+	end
+	return type(answer) == "string" and (answer == "A" or answer == "B" or answer == "C")
+end
+
+local function resolvePromptHost(instance)
+	if instance:IsA("BasePart") then return instance end
+	local rootPart = instance:FindFirstChild("HumanoidRootPart")
+	if rootPart and rootPart:IsA("BasePart") then return rootPart end
+	if instance.PrimaryPart and instance.PrimaryPart:IsA("BasePart") then return instance.PrimaryPart end
+
+	for _, descendant in ipairs(instance:GetDescendants()) do
+		if descendant:IsA("BasePart") then return descendant end
+	end
+	return nil
+end
+
+local promptHost = resolvePromptHost(npc)
+if not promptHost then
+	error("TheoreticalExamNPC must contain at least one BasePart.")
+end
+
+local prompt = promptHost:FindFirstChild(Config.PromptName)
+if not prompt then
+	prompt = Instance.new("ProximityPrompt")
+	prompt.Name = Config.PromptName
+	prompt.Parent = promptHost
+end
+
+prompt.ActionText = "Start Exam"
+prompt.ObjectText = "Theory Exam"
+prompt.KeyboardKeyCode = Config.PromptKeyCode
+prompt.HoldDuration = 0
+prompt.MaxActivationDistance = Config.MaxActivationDistance
+prompt.RequiresLineOfSight = false
+
+local passCache = {}
+local activeSessions = {}
+
+local function deepCopyQuestion(question)
+	return {
+		Id = question.Id,
+		Text = question.Text,
+		Type = question.Type,
+		Points = question.Points,
+		ImageId = question.ImageId,
+		Options = cloneOptions(question.Options),
+		CorrectAnswer = question.CorrectAnswer,
+	}
+end
+
+local function buildDeck()
+	local allQuestions = type(QuestionsModule.GetAllQuestions) == "function" and QuestionsModule.GetAllQuestions() or {}
+	local basicPool = {}
+	local specialistPool = {}
+
+	for _, question in ipairs(allQuestions) do
+		local normalized = normalizeQuestion(question)
+		if normalized then
+			if normalized.Type == "Basic" then
+				table.insert(basicPool, normalized)
+			else
+				table.insert(specialistPool, normalized)
+			end
+		end
+	end
+
+	if #basicPool < Config.RequiredBasicQuestions or #specialistPool < Config.RequiredSpecialistQuestions then
+		return nil, "InsufficientQuestionPool"
+	end
+
+	-- Shuffle pools independently
+	shuffle(basicPool)
+	shuffle(specialistPool)
+
+	local deck = table.create(Config.RequiredBasicQuestions + Config.RequiredSpecialistQuestions)
+	local totalPoints = 0
+
+	-- 1. Inject Basic questions first
+	for index = 1, Config.RequiredBasicQuestions do
+		local question = deepCopyQuestion(basicPool[index])
+		table.insert(deck, question)
+		totalPoints += question.Points
+	end
+
+	-- 2. Inject Specialist questions after Basic
+	for index = 1, Config.RequiredSpecialistQuestions do
+		local question = deepCopyQuestion(specialistPool[index])
+		table.insert(deck, question)
+		totalPoints += question.Points
+	end
+
+	-- EXPLOIT FIX: Do NOT shuffle the main deck here to preserve the Basic -> Specialist flow.
+	return deck, totalPoints
+end
+
+local function retryAsync(callback, attempts, delaySeconds)
+	local lastError
+	for _ = 1, attempts do
+		local success, result = pcall(callback)
+		if success then return true, result end
+		lastError = result
+		task.wait(delaySeconds)
+	end
+	return false, lastError
+end
+
+local function loadPassState(player)
+	local cached = passCache[player.UserId]
+	if cached ~= nil then
+		player:SetAttribute(Config.PassKey, cached)
+		return cached, true
+	end
+
+	local key = tostring(player.UserId)
+	local success, result = retryAsync(function()
+		return examStore:GetAsync(key)
+	end, 3, 0.5)
+
+	if not success then return false, false end
+
+	local passed = result == true
+	passCache[player.UserId] = passed
+	player:SetAttribute(Config.PassKey, passed)
+	return passed, true
+end
+
+local function savePassState(player)
+	local key = tostring(player.UserId)
+	local success = retryAsync(function()
+		return examStore:UpdateAsync(key, function()
+			return true
+		end)
+	end, 3, 0.5)
+
+	if success then
+		passCache[player.UserId] = true
+		player:SetAttribute(Config.PassKey, true)
+		return true
+	end
+	return false
+end
+
+local function chargeForExam(player)
+	local economyFolder = ServerScriptService:FindFirstChild("EconomyServer")
+	if economyFolder then
+		local economyScript = economyFolder:FindFirstChild("Economy")
+		if economyScript then
+			local ok, economyModule = pcall(require, economyScript)
+			if ok and economyModule then
+				local handler = economyModule.getHandler and economyModule.getHandler(player)
+				if handler then
+					if type(handler.canAfford) == "function" and not handler:canAfford(Config.ExamPrice) then
+						return false, "NotEnoughMoney"
+					end
+
+					if type(handler.purchase) == "function" then
+						if not handler:purchase(Config.ExamPrice) then
+							return false, "NotEnoughMoney"
+						end
+					else
+						return false, "EconomyUnavailable"
+					end
+
+					if type(handler.savePlayer) == "function" then
+						task.spawn(function()
+							pcall(function() handler:savePlayer() end)
+						end)
+					end
+					return true, "Success"
+				end
+			end
+		end
+	end
+
+	-- Fallback to default leaderstats
+	local leaderstats = player:FindFirstChild("leaderstats")
+	local moneyValue = leaderstats and (leaderstats:FindFirstChild("Money") or leaderstats:FindFirstChild("Cash"))
+	if moneyValue and moneyValue:IsA("IntValue") then
+		if moneyValue.Value < Config.ExamPrice then
+			return false, "NotEnoughMoney"
+		end
+		moneyValue.Value -= Config.ExamPrice
+		return true, "Success"
+	end
+
+	return false, "EconomyUnavailable"
+end
+
+local function buildQuestionPayload(session)
+	local question = session.Questions[session.CurrentIndex]
+	if not question then return nil end
+
+	return {
+		sessionId = session.SessionId,
+		questionToken = session.QuestionToken,
+		questionId = question.Id,
+		text = question.Text,
+		type = question.Type,
+		imageId = question.ImageId,
+		points = question.Points,
+		timeLimit = session.TimeLimit,
+		deadline = session.Deadline,
+		totalQuestions = session.TotalQuestions,
+		totalPoints = session.TotalPoints,
+		scorePoints = session.ScorePoints,
+		answeredQuestions = session.AnsweredQuestions,
+		basicAnswered = session.BasicAnswered,
+		basicTotal = session.BasicTotal,
+		specialistAnswered = session.SpecialistAnswered,
+		specialistTotal = session.SpecialistTotal,
+		selectedAnswer = session.SelectedAnswer,
+		currentIndex = session.CurrentIndex,
+		options = cloneOptions(question.Options),
+	}
+end
+
+local function finishSession(player, session, reason)
+	if session.Ended then return end
+	session.Ended = true
+
+	local requiredPoints = math.max(1, math.ceil(session.TotalPoints * Config.PassPercentage))
+	local passed = session.ScorePoints >= requiredPoints
+
+	if passed then
+		savePassState(player)
+	end
+
+	clientEvent:FireClient(player, "Finished", {
+		reason = reason,
+		passed = passed,
+		scorePoints = session.ScorePoints,
+		totalPoints = session.TotalPoints,
+		requiredPoints = requiredPoints,
+		totalQuestions = session.TotalQuestions,
+		answeredQuestions = session.AnsweredQuestions,
+		basicAnswered = session.BasicAnswered,
+		basicTotal = session.BasicTotal,
+		specialistAnswered = session.SpecialistAnswered,
+		specialistTotal = session.SpecialistTotal,
+	})
+
+	activeSessions[player.UserId] = nil
+	player:SetAttribute("TheoreticalExamActive", false)
+end
+
+local function sendCurrentQuestion(player, session)
+	local question = session.Questions[session.CurrentIndex]
+	if not question then
+		finishSession(player, session, "Completed")
+		return
+	end
+
+	session.TimeLimit = getTimeLimit(question.Type)
+	session.CurrentSubmitted = false
+	session.SelectedAnswer = nil
+	session.Deadline = getServerTime() + session.TimeLimit
+	session.QuestionToken += 1
+
+	local payload = buildQuestionPayload(session)
+	if payload then
+		clientEvent:FireClient(player, "Question", payload)
+	end
+
+	local expectedToken = session.QuestionToken
+	task.delay(session.TimeLimit + 0.15, function()
+		local liveSession = activeSessions[player.UserId]
+		if not liveSession or liveSession ~= session or liveSession.Ended then return end
+		if liveSession.QuestionToken ~= expectedToken then return end
+		if liveSession.CurrentSubmitted then return end
+		if getServerTime() < liveSession.Deadline then return end
+
+		if liveSession.CurrentIndex <= liveSession.TotalQuestions then
+			liveSession.CurrentSubmitted = true
+			liveSession.AnsweredQuestions += 1
+
+			local currentQuestion = liveSession.Questions[liveSession.CurrentIndex]
+			if currentQuestion.Type == "Basic" then
+				liveSession.BasicAnswered += 1
+			else
+				liveSession.SpecialistAnswered += 1
+			end
+
+			liveSession.CurrentIndex += 1
+			sendCurrentQuestion(player, liveSession)
+		end
+	end)
+end
+
+local function resolveCurrentQuestion(player, session, wasCorrect, reason)
+	if session.Ended or session.CurrentSubmitted then return end
+
+	local question = session.Questions[session.CurrentIndex]
+	if not question then
+		finishSession(player, session, reason or "Completed")
+		return
+	end
+
+	session.CurrentSubmitted = true
+	session.AnsweredQuestions += 1
+
+	if question.Type == "Basic" then
+		session.BasicAnswered += 1
+	else
+		session.SpecialistAnswered += 1
+	end
+
+	if wasCorrect then
+		session.ScorePoints += question.Points
+	end
+
+	session.CurrentIndex += 1
+	session.SelectedAnswer = nil
+
+	if session.CurrentIndex > session.TotalQuestions then
+		finishSession(player, session, reason or "Completed")
+		return
+	end
+
+	sendCurrentQuestion(player, session)
+end
+
+local function startSession(player)
+	if activeSessions[player.UserId] and not activeSessions[player.UserId].Ended then return end
+
+	local passed, loaded = loadPassState(player)
+	if not loaded then
+		clientEvent:FireClient(player, "Blocked", { reason = "DataUnavailable" })
+		return
+	end
+
+	if passed then
+		clientEvent:FireClient(player, "AlreadyPassed")
+		return
+	end
+
+	local canPay, reason = chargeForExam(player)
+	if not canPay then
+		clientEvent:FireClient(player, reason == "NotEnoughMoney" and "NotEnoughMoney" or "Blocked", { reason = reason })
+		return
+	end
+
+	local deck, totalPointsOrReason = buildDeck()
+	if not deck then
+		clientEvent:FireClient(player, "Blocked", { reason = totalPointsOrReason })
+		return
+	end
+
+	local session = {
+		SessionId = string.format("%d-%d", player.UserId, math.floor(getServerTime() * 1000)),
+		Questions = deck,
+		TotalQuestions = #deck,
+		TotalPoints = totalPointsOrReason,
+		ScorePoints = 0,
+		AnsweredQuestions = 0,
+		BasicAnswered = 0,
+		BasicTotal = Config.RequiredBasicQuestions,
+		SpecialistAnswered = 0,
+		SpecialistTotal = Config.RequiredSpecialistQuestions,
+		CurrentIndex = 1,
+		CurrentSubmitted = false,
+		SelectedAnswer = nil,
+		Deadline = 0,
+		TimeLimit = 0,
+		QuestionToken = 0,
+		Ended = false,
+	}
+
+	activeSessions[player.UserId] = session
+	player:SetAttribute("TheoreticalExamActive", true)
+
+	clientEvent:FireClient(player, "Open", {
+		sessionId = session.SessionId,
+		totalQuestions = session.TotalQuestions,
+		totalPoints = session.TotalPoints,
+		scorePoints = session.ScorePoints,
+		requiredPoints = math.max(1, math.ceil(session.TotalPoints * Config.PassPercentage)),
+		basicTotal = session.BasicTotal,
+		specialistTotal = session.SpecialistTotal,
+	})
+
+	sendCurrentQuestion(player, session)
+end
+
+-- Exploit resistance: Strict payload validation
+local function validatePayload(player, payload)
+	if type(payload) ~= "table" then return nil end
+
+	local session = activeSessions[player.UserId]
+	if not session or session.Ended then return nil end
+
+	if tostring(payload.sessionId) ~= session.SessionId then return nil end
+	if tonumber(payload.questionToken) ~= session.QuestionToken then return nil end
+
+	local question = session.Questions[session.CurrentIndex]
+	if not question or tonumber(payload.questionId) ~= question.Id then return nil end
+
+	return session, question
+end
+
+local function setSelection(player, payload)
+	local session, question = validatePayload(player, payload)
+	if not session then return end
+	if session.CurrentSubmitted or getServerTime() > session.Deadline then return end
+
+	local selectedAnswer = payload.selectedAnswer
+	if not selectionIsValid(question, selectedAnswer) then return end
+
+	session.SelectedAnswer = selectedAnswer
+	clientEvent:FireClient(player, "SelectionUpdated", {
+		sessionId = session.SessionId,
+		questionId = question.Id,
+		questionToken = session.QuestionToken,
+		selectedAnswer = selectedAnswer,
+	})
+end
+
+local function requestNext(player, payload)
+	local session, question = validatePayload(player, payload)
+	if not session or session.CurrentSubmitted then return end
+
+	local selectedAnswer = session.SelectedAnswer
+	local inTime = getServerTime() <= session.Deadline
+	local isCorrect = inTime and selectionIsValid(question, selectedAnswer) and answersMatch(question, question.CorrectAnswer, selectedAnswer)
+
+	resolveCurrentQuestion(player, session, isCorrect, "Submitted")
+end
+
+local function requestEnd(player, payload)
+	if type(payload) ~= "table" then return end
+
+	local session = activeSessions[player.UserId]
+	if not session or session.Ended then return end
+	if tostring(payload.sessionId) ~= session.SessionId then return end
+
+	finishSession(player, session, "PlayerEnded")
+end
+
+prompt.Triggered:Connect(function(player)
+	if not player or not player:IsA("Player") then return end
+
+	local character = player.Character
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	if rootPart and rootPart:IsA("BasePart") then
+		local distance = (rootPart.Position - promptHost.Position).Magnitude
+		if distance > (Config.MaxActivationDistance + 10) then return end
+	end
+
+	startSession(player)
+end)
+
+serverEvent.OnServerEvent:Connect(function(player, action, payload)
+	if type(action) ~= "string" then return end
+
+	if action == "SelectAnswer" then
+		setSelection(player, payload)
+	elseif action == "RequestNext" then
+		requestNext(player, payload)
+	elseif action == "RequestEnd" then
+		requestEnd(player, payload)
+	end
+end)
+
+Players.PlayerAdded:Connect(function(player)
+	task.spawn(function()
+		loadPassState(player)
+	end)
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	activeSessions[player.UserId] = nil
+	passCache[player.UserId] = nil
+end)
+
+for _, player in ipairs(Players:GetPlayers()) do
+	task.spawn(function()
+		loadPassState(player)
+	end)
+end
