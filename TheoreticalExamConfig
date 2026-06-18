@@ -1,0 +1,25 @@
+local Config = {}
+
+Config.DataStoreName = "TheoreticalExamProgress_v1"
+Config.PassKey = "PassedTheoreticalExam"
+
+Config.ExamPrice = 200
+Config.PassPercentage = 0.80
+
+Config.BasicTimeLimit = 20
+Config.SpecialistTimeLimit = 50
+
+Config.RequiredBasicQuestions = 20
+Config.RequiredSpecialistQuestions = 12
+
+Config.DefaultImage = "rbxassetid://127888355317156"
+Config.RemoteFolderName = "TheoreticalExamRemotes"
+Config.ClientEventName = "ExamClientEvent"
+Config.ServerEventName = "ExamServerEvent"
+Config.NpcName = "TheoreticalExamNPC"
+Config.PromptName = "TheoreticalExamPrompt"
+
+Config.MaxActivationDistance = 10
+Config.PromptKeyCode = Enum.KeyCode.E
+
+return Config
