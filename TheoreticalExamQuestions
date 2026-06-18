@@ -1,0 +1,638 @@
+local DEFAULT_IMAGE = "rbxassetid://127888355317156"
+
+local Questions = {
+	-- == BASIC ==
+	{
+		Id = 1,
+		Text = "Czy możesz skorzystać z tej drogi, chcąc wjechać do myjni?",
+		Type = "Basic",
+		Points = 2,
+		ImageId = "rbxassetid://86517807465549",
+		CorrectAnswer = false, -- Kept aligned with the current rule set.
+	},
+	{
+		Id = 2,
+		Text = "Czy w przedstawionej sytuacji możesz skręcić w prawo?",
+		Type = "Basic",
+		Points = 2,
+		ImageId = "rbxassetid://86697813199913",
+		CorrectAnswer = false,
+	},
+	{
+		Id = 3,
+		Text = "Czy w dzień zabronione jest ostrzeganie światłami drogowymi, jeżeli może spowodować to oślepienie innych kierujących?",
+		Type = "Basic",
+		Points = 2,
+		ImageId = "rbxassetid://116656414804205",
+		CorrectAnswer = true,
+	},
+	{
+		Id = 4,
+		Text = "Czy w przedstawionej sytuacji wolno Ci skręcić w prawo?",
+		Type = "Basic",
+		Points = 2,
+		ImageId = "rbxassetid://91524002335951",
+		CorrectAnswer = false,
+	},
+	{
+		Id = 5,
+		Text = "Czy ten znak oznacza wjazd na obszar zabudowany?",
+		Type = "Basic",
+		Points = 2,
+		ImageId = "rbxassetid://139531430652783",
+		CorrectAnswer = true,
+	},
+	{
+		Id = 6,
+		Text = "Czy jadąc na wprost będziesz poruszał się drogą z pierwszeństwem?",
+		Type = "Basic",
+		ImageId = "rbxassetid://71900149419878",
+		CorrectAnswer = true,
+	},
+	{
+		Id = 25,
+		Text = "Czy w tej sytuacji, po zatrzymaniu i upewnieniu się, że nie zbliża się pociąg, masz prawo rozpocząć jazdę nie czekając na zgodę uprawnionej osoby ?",
+		Type = "Basic",
+		Points = 2,
+		ImageId = "rbxassetid://117284967895614",
+		CorrectAnswer = false,
+	},
+	{
+		Id = 26,
+		Text = "Czy podczas kierowania hulajnogą elektryczną, wolno Ci korzystać z telefonu wymagającego trzymania słuchawki lub mikrofonu w ręku?",
+		Type = "Basic",
+		Points = 2,
+		ImageId = "rbxassetid://115079778040423",
+		CorrectAnswer = false,
+	},
+	{
+		Id = 27,
+		Text = "Czy w przedstawionej sytuacji jesteś ostrzegany o skrzyżowaniu, na którym ruch odbywa się dookoła wyspy lub placu, w kierunku wskazanym na znaku?",
+		Type = "Basic",
+		Points = 2,
+		ImageId = "rbxassetid://90639120355705",
+		CorrectAnswer = true,
+	},
+	{
+		Id = 28,
+		Text = "Uczestniczyłeś w wypadku drogowym, w którym są ranni. Czy wolno Ci podejmować czynności, które mogłyby utrudnić ustalenie przebiegu wypadku?",
+		Type = "Basic",
+		Points = 2,
+		ImageId = "rbxassetid://89746721451846",
+		CorrectAnswer = false,
+	},
+	{
+		Id = 29,
+		Text = "Czy w tej sytuacji wolno Ci zmienić pas ruchu na znajdujący się przy prawej krawędzi jezdni?",
+		Type = "Basic",
+		Points = 2,
+		ImageId = "rbxassetid://96189275349280",
+		CorrectAnswer = false,
+	},
+	{
+		Id = 30,
+		Text = "Czy w przedstawionej sytuacji dozwolone jest zawracanie?",
+		Type = "Basic",
+		Points = 2,
+		ImageId = "rbxassetid://113630015908750",
+		CorrectAnswer = false,
+	},
+	{
+		Id = 31,
+		Text = "Czy wolno Ci holować pojazd, którym kieruje osoba w stanie po użyciu alkoholu?",
+		Type = "Basic",
+		Points = 2,
+		ImageId = "rbxassetid://117551014131894",
+		CorrectAnswer = false,
+	},
+	{
+		Id = 32,
+		Text = "Czy zbliżając się do miejsca oznaczonego tym znakiem masz obowiązek zachować szczególną ostrożność?",
+		Type = "Basic",
+		Points = 2,
+		ImageId = "rbxassetid://112773820196847",
+		CorrectAnswer = true,
+	},
+	{
+		Id = 33,
+		Text = "Czy z zajmowanego pasa ruchu wolno Ci skręcić w prawo na tym skrzyżowaniu?",
+		Type = "Basic",
+		Points = 2,
+		ImageId = "rbxassetid://116903468829640",
+		CorrectAnswer = true,
+	},
+	{
+		Id = 34,
+		Text = "Czy pojazd poruszający się z dużą prędkością może być trudniejszy do zauważenia przez innych uczestników ruchu drogowego?",
+		Type = "Basic",
+		Points = 2,
+		ImageId = DEFAULT_IMAGE,
+		CorrectAnswer = true,
+	},
+	{
+		Id = 35,
+		Text = "Czy w tej sytuacji powinieneś oczekiwać, że następnym sygnałem będzie światło zielone?",
+		Type = "Basic",
+		Points = 2,
+		ImageId = "rbxassetid://114728818178647",
+		CorrectAnswer = true,
+	},
+	{
+		Id = 36,
+		Text = "Czy w tej sytuacji wolno Ci jeszcze skręcić w prawo?",
+		Type = "Basic",
+		Points = 2,
+		ImageId = "rbxassetid://126872894404569",
+		CorrectAnswer = false,
+	},
+	{
+		Id = 37,
+		Text = "Czy w przedstawionej sytuacji jesteś ostrzegany o zbliżaniu się do przejazdu kolejowego wyposażonego w zapory, lub w półzapory?",
+		Type = "Basic",
+		Points = 2,
+		ImageId = "rbxassetid://88946314340786",
+		CorrectAnswer = true,
+	},
+	{
+		Id = 49,
+		Text = "Czy podczas wyprzedzania rowerzysty, w warunkach zmniejszonej przejrzystości powietrza, poza obszarem zabudowanym, powinieneś używać krótkotrwałych sygnałów dźwiękowych?",
+		Type = "Basic",
+		Points = 2,
+		ImageId = "rbxassetid://135195742822273",
+		CorrectAnswer = true,
+	},
+	{
+		Id = 50,
+		Text = "Czy w tej sytuacji powinieneś wziąć pod uwagę, że rowerzysta może wjechać na jezdnię?",
+		Type = "Basic",
+		Points = 2,
+		ImageId = "rbxassetid://135034905203064",
+		CorrectAnswer = true,
+	},
+	{
+		Id = 51,
+		Text = "Czy podczas wyprzedzania rowerzysty, w warunkach zmniejszonej przejrzystości powietrza, poza obszarem zabudowanym, powinieneś używać krótkotrwałych sygnałów dźwiękowych?",
+		Type = "Basic",
+		Points = 2,
+		ImageId = "rbxassetid://135034905203064",
+		CorrectAnswer = true,
+	},
+	{
+		Id = 52,
+		Text = "Czy w tej sytuacji widząc pieszych idących po jezdni możesz użyć sygnału dźwiękowego ?",
+		Type = "Basic",
+		Points = 2,
+		ImageId = "rbxassetid://86204372332177",
+		CorrectAnswer = false,
+	},
+	{
+		Id = 53,
+		Text = "Czy masz prawo włączyć światła awaryjne, gdy kierujesz holowanym pojazdem?",
+		Type = "Basic",
+		Points = 2,
+		ImageId = "rbxassetid://71195489569127",
+		CorrectAnswer = false,
+	},
+	{
+		Id = 54,
+		Text = "Czy w tej sytuacji masz prawo zmienić pas ruchu bezpośrednio przed skrzyżowaniem?",
+		Type = "Basic",
+		Points = 2,
+		ImageId = "rbxassetid://135806185217325",
+		CorrectAnswer = false,
+	},
+	{
+		Id = 55,
+		Text = "Czy masz obowiązek stosowania się do poleceń i sygnałów dawanych przez osobę wykonującą roboty na drodze na zlecenie zarządcy drogi?",
+		Type = "Basic",
+		Points = 2,
+		ImageId = "rbxassetid://101537000882396",
+		CorrectAnswer = true,
+	},
+	{
+		Id = 56,
+		Text = "Czy kierując motocyklem wolno Ci za tym znakiem wyprzedzić samochód osobowy?",
+		Type = "Basic",
+		Points = 2,
+		ImageId = "rbxassetid://103111644480707",
+		CorrectAnswer = false,
+	},
+
+
+
+
+
+
+	-- == SPECIALIST ==
+	{
+		Id = 7,
+		Text = "Które w wymienionych elementów drogi powinieneś obserwować podczas jazdy autostradą?",
+		Type = "Specialist",
+		Points = 3,
+		ImageId = "rbxassetid://108027175501277",
+		Options = {
+			A = "Tylko swój pas ruchu przed pojazdem.",
+			B = "Całą jezdnię i pobocze przed i za pojazdem.",
+			C = "Tylko swój pas ruchu i prawe pobocze przed pojazdem."
+		},
+		CorrectAnswer = "B",
+	},
+	{
+		Id = 8,
+		Text = "Jaki odstęp należy zachować podczas wyprzedzania samochodu osobowego?",
+		Type = "Specialist",
+		Points = 3,
+		ImageId = DEFAULT_IMAGE,
+		Options = {
+			A = "Bezpieczny, uzależniony od szerokości jezdni i warunków ruchu.",
+			B = "Bezpieczny, ale większy niż 1,5 metra.",
+			C = "Bezpieczny, ale mniejszy niż 0,5 metra."
+		},
+		CorrectAnswer = "A",
+	},
+	{
+		Id = 9,
+		Text = "Kiedy należy założyć opatrunek uciskowy?",
+		Type = "Specialist",
+		Points = 3,
+		ImageId = DEFAULT_IMAGE,
+		Options = {
+			A = "W przypadku zmiażdżenia kończyny.",
+			B = "W przypadku wycieku krwistej wydzieliny z ucha.",
+			C = "W przypadku krwotoku."
+		},
+		CorrectAnswer = "C",
+	},
+	{
+		Id = 10,
+		Text = "Jedziesz z prędkością 90 km/h. Jaka pozycja początkowa zapewni Ci optymalny tor jazdy po zakręcie?",
+		Type = "Specialist",
+		Points = 3,
+		ImageId = "rbxassetid://102964518302506",
+		Options = {
+			A = "Na środku jezdni, z częściowym przekroczeniem widocznej linii.",
+			B = "Przy linii rozdzielającej pasy ruchu - na prawej połowie jezdni.",
+			C = "Przy prawej krawędzi jezdni."
+		},
+		CorrectAnswer = "C",
+	},
+	{
+		Id = 11,
+		Text = "Jaki wpływ ma prędkość jazdy na kąt widzenia kierującego samochodem osobowym?",
+		Type = "Specialist",
+		Points = 3,
+		ImageId = DEFAULT_IMAGE,
+		Options = {
+			A = "Wraz ze wzrostem prędkości kąt widzenia zawęża się.",
+			B = "Wraz ze wzrostem prędkości kąt widzenia rozszerza się.",
+			C = "Nie ma żadnego wpływu."
+		},
+		CorrectAnswer = "A",
+	},
+	{
+		Id = 12,
+		Text = "Którą z wymienionych czynności należy wykonać, kierując samochodem osobowym w nocy podczas mgły?",
+		Type = "Specialist",
+		Points = 3,
+		ImageId = DEFAULT_IMAGE,
+		Options = {
+			A = "Zmniejszyć prędkość.",
+			B = "Włączyć światła drogowe w celu polepszenia widoczności.",
+			C = "Jechać bardzo blisko poprzedzającego pojazdu, aby widzieć jego światła pozycyjne."
+		},
+		CorrectAnswer = "A",
+	},
+	{
+		Id = 13,
+		Text = "Z jaką maksymalną dopuszczalną prędkością wolno Ci jechać po drodze za tym znakiem, jeśli holujesz inny samochód osobowy?",
+		Type = "Specialist",
+		Points = 3,
+		ImageId = "rbxassetid://121949391427726",
+		Options = {
+			A = "30 km/h,",
+			B = "50 km/h,",
+			C = "60 km/h."
+		},
+		CorrectAnswer = "A",
+	},
+	{
+		Id = 14,
+		Text = "Która z widocznych na ilustracji lampek kontrolnych informuje o włączonych światłach drogowych?",
+		Type = "Specialist",
+		Points = 3,
+		ImageId = "rbxassetid://87074121308797",
+		Options = {
+			A = "A.",
+			B = "B.",
+			C = "C."
+		},
+		CorrectAnswer = "B",
+	},
+	{
+		Id = 15,
+		Text = "W jakim przypadku możesz przewozić trzecie dziecko, o wzroście poniżej 135 cm, na tylnym siedzeniu samochodu osobowego lub ciężarowego, przytrzymywane jedynie pasami bezpieczeństwa?",
+		Type = "Specialist",
+		Points = 3,
+		ImageId = DEFAULT_IMAGE,
+		Options = {
+			A = "Jeżeli dwoje dzieci przewożonych jest w fotelikach bezpieczeństwa i nie ma możliwości zainstalowania trzeciego fotelika, a trzecie dziecko ma ukończone 3 lata",
+			B = "Tylko, jeżeli trzecie dziecko ma wzrost co najmniej 100 cm wzrostu.",
+			C = "Tylko, jeżeli trzecie dziecko ukończyło 15 lat."
+		},
+		CorrectAnswer = "A",
+	},
+	{
+		Id = 16,
+		Text = "W jakich warunkach masz prawo włączyć tylne światła przeciwmgłowe?",
+		Type = "Specialist",
+		Points = 3,
+		ImageId = "rbxassetid://92365423575322",
+		Options = {
+			A = "Gdy widoczność w obfitym deszczu jest ograniczona do 60 m.",
+			B = "Gdy widoczność w gęstej mgle jest ograniczona do 100 m.",
+			C = "Gdy widoczność podczas opadów śniegu jest mniejsza niż 50 m."
+		},
+		CorrectAnswer = "C",
+	},
+	{
+		Id = 17,
+		Text = "Który z wymienionych czynników ma bezpośredni wpływ na długość całkowitej drogi zatrzymania samochodu osobowego?",
+		Type = "Specialist",
+		Points = 3,
+		ImageId = "rbxassetid://108490349308002",
+		Options = {
+			A = "Ilość paliwa w zbiorniku.",
+			B = "Stan układu kierowniczego pojazdu.",
+			C = "Czas reakcji kierującego pojazdem."
+		},
+		CorrectAnswer = "C",
+	},
+	{
+		Id = 18,
+		Text = "Co musisz zrobić, żeby przewieźć trzyletnie dziecko na tylnym siedzeniu samochodu osobowego, na którym w fotelikach już siedzi dwoje dzieci i nie ma możliwości zainstalowania trzeciego fotelika?",
+		Type = "Specialist",
+		Points = 3,
+		ImageId = DEFAULT_IMAGE,
+		Options = {
+			A = "Musisz zabezpieczyć dziecko pasami bezpieczeństwa.",
+			B = "Powinieneś posadzić dziecko na kolanach osoby dorosłej.",
+			C = "Musisz zablokować tylne drzwi, uniemożliwiając ich otwarcie od zewnątrz."
+		},
+		CorrectAnswer = "A",
+	},
+	{
+		Id = 19,
+		Text = "Co może być przyczyną znacznie zwiększonej częstotliwości migania świateł kierunkowskazów?",
+		Type = "Specialist",
+		Points = 3,
+		ImageId = "rbxassetid://89225157220127",
+		Options = {
+			A = "Zwarcie w obwodzie świateł kierunkowskazów.",
+			B = "Niesprawność żarówki w jednej z lamp kierunkowskazów.",
+			C = "Niskie napięcie akumulatora."
+		},
+		CorrectAnswer = "B",
+	},
+	{
+		Id = 20,
+		Text = "Czy dopuszczalne jest holowanie samochodem osobowym na autostradzie do najbliższego wyjazdu lub miejsca obsługi podróżnych?",
+		Type = "Specialist",
+		Points = 3,
+		ImageId = "rbxassetid://97391164157580",
+		Options = {
+			A = "Nie.",
+			B = "Tak.",
+			C = "Tak, ale jadąc z maksymalną prędkością 20 km/h."
+		},
+		CorrectAnswer = "A",
+	},
+	{
+		Id = 21,
+		Text = "Jaki może być objaw pęknięcia przewodu hamulcowego w samochodzie osobowym?",
+		Type = "Specialist",
+		Points = 3,
+		ImageId = DEFAULT_IMAGE,
+		Options = {
+			A = "Wzrost siły hamującej przy jednostajnym naciskaniu na pedał hamulca.",
+			B = "Niewielki lub brak oporu pedału hamulca przy jego wciskaniu.",
+			C = "Bardzo duży opór pedału hamulca przy jego wciskaniu."
+		},
+		CorrectAnswer = "B",
+	},
+	{
+		Id = 22,
+		Text = "Który ze sposobów hamowania samochodu osobowego wyposażonego w system ABS jest najbardziej efektywny?",
+		Type = "Specialist",
+		Points = 3,
+		ImageId = DEFAULT_IMAGE,
+		Options = {
+			A = "Pulsacyjne wciskanie pedału hamulca.",
+			B = "Szybkie i mocne wciśnięcie pedału hamulca.",
+			C = "Wciśnięcie pedału sprzęgła, a następnie pedału hamulca."
+		},
+		CorrectAnswer = "B",
+	},
+	{
+		Id = 23,
+		Text = "Czy kierując pojazdem samochodowym o dopuszczalnej masie całkowitej 2,5 t, na obszarze zabudowanym, na tak oznakowanej drodze, możesz jechać z prędkością 70 km/h?",
+		Type = "Specialist",
+		Points = 3,
+		ImageId = "rbxassetid://85184664021734",
+		Options = {
+			A = "Tak.",
+			B = "Nie.",
+			C = "Nie, jeżeli jedziesz w godzinach od 5.00 do 23.00."
+		},
+		CorrectAnswer = "A",
+	},
+	{
+		Id = 24,
+		Text = "Jakie czynniki mają wpływ na łączny czas postrzegania i reakcji kierującego pojazdem?",
+		Type = "Specialist",
+		Points = 3,
+		ImageId = "rbxassetid://125795902192218",
+		Options = {
+			A = "Stan opon.",
+			B = "Widoczność na drodze, złożoność sytuacji drogowej..",
+			C = "Dodatkowa masa pojazdu."
+		},
+		CorrectAnswer = "B",
+	},
+	{
+		Id = 38,
+		Text = "Który z wymienionych czynników, może spowodować szybsze zużywanie się opon na kołach przednich w samochodzie osobowym?",
+		Type = "Specialist",
+		Points = 3,
+		ImageId = "rbxassetid://70959067116880",
+		Options = {
+			A = "Niewielkie obciążenie przedniej osi pojazdu.",
+			B = "Nieprawidłowa zbieżność.",
+			C = "Nierówna nawierzchnia jezdni."
+		},
+		CorrectAnswer = "B",
+	},
+	{
+		Id = 39,
+		Text = "Która z widocznych na ilustracji lampek kontrolnych informuje o włączonych kierunkowskazach?",
+		Type = "Specialist",
+		Points = 3,
+		ImageId = "rbxassetid://83179770160188",
+		Options = {
+			A = "A.",
+			B = "B.",
+			C = "C."
+		},
+		CorrectAnswer = "A",
+	},
+	{
+		Id = 40,
+		Text = "Kiedy masz obowiązek przełączyć światła drogowe na światła mijania?",
+		Type = "Specialist",
+		Points = 3,
+		ImageId = DEFAULT_IMAGE,
+		Options = {
+			A = "Zawsze, gdy widzisz pojazd poprzedzający.",
+			B = "Zawsze, gdy istnieje możliwość oślepienia kierującego pojazdem poprzedzającym.",
+			C = "Zawsze, gdy widzisz pojedynczego pieszego na jezdni."
+		},
+		CorrectAnswer = "B",
+	},
+	{
+		Id = 41,
+		Text = "Pod który z podanych numerów powinieneś zadzwonić, aby wezwać karetkę pogotowia ratunkowego na miejsce wypadku drogowego?",
+		Type = "Specialist",
+		Points = 3,
+		ImageId = "rbxassetid://119657304351466",
+		Options = {
+			A = "997",
+			B = "998",
+			C = "112 lub 999"
+		},
+		CorrectAnswer = "C",
+	},
+	{
+		Id = 42,
+		Text = "Jakie mogą być skutki niezapięcia pasów bezpieczeństwa przez kierowcę?",
+		Type = "Specialist",
+		Points = 3,
+		ImageId = "rbxassetid://77686033574900",
+		Options = {
+			A = "Większe uszkodzenia pojazdu podczas kolizji.",
+			B = "Większe obrażenia ciała kierowcy podczas wypadku.",
+			C = "Uszkodzenie poduszki powietrznej."
+		},
+		CorrectAnswer = "B",
+	},
+	{
+		Id = 43,
+		Text = "Jaki odstęp należy zachować podczas wyprzedzania kolumny pieszych?",
+		Type = "Specialist",
+		Points = 3,
+		ImageId = DEFAULT_IMAGE,
+		Options = {
+			A = "Bezpieczny, ale nie mniejszy niż 0,6 metra.",
+			B = "Bezpieczny, ale nie mniejszy niż 0,8 metra.",
+			C = "Bezpieczny, ale nie mniejszy niż 1 metr."
+		},
+		CorrectAnswer = "C",
+	},
+	{
+		Id = 44,
+		Text = "Za które naruszenie przepisów ruchu drogowego policjant zatrzyma prawo jazdy?",
+		Type = "Specialist",
+		Points = 3,
+		ImageId = DEFAULT_IMAGE,
+		Options = {
+			A = "Za wyprzedzanie z naruszeniem pojedynczej linii ciągłej.",
+			B = "Za przewożenie osób w liczbie przekraczającej o dwa liczbę miejsc określoną w dowodzie rejestracyjnym samochodu osobowego.",
+			C = "Za wymijanie na przejeździe kolejowym."
+		},
+		CorrectAnswer = "B",
+	},
+	{
+		Id = 45,
+		Text = "Używanie pojazdu w sposób powodujący uciążliwości związane z nadmierną emisją spalin do środowiska lub nadmiernym hałasem jest:",
+		Type = "Specialist",
+		Points = 3,
+		ImageId = DEFAULT_IMAGE,
+		Options = {
+			A = "zabronione w obszarze zabudowanym.",
+			B = "zabronione.",
+			C = "zabronione tylko w strefie zamieszkania."
+		},
+		CorrectAnswer = "B",
+	},
+	{
+		Id = 46,
+		Text = "Starosta wydaje decyzję administracyjną o zatrzymaniu prawa jazdy, gdy kierujący pojazdem przekroczył dopuszczalną prędkość o",
+		Type = "Specialist",
+		Points = 3,
+		ImageId = DEFAULT_IMAGE,
+		Options = {
+			A = "więcej niż 50 km/h na obszarze zabudowanym.",
+			B = "50 km/h na obszarze zabudowanym.",
+			C = "50 km/h poza obszarem zabudowanym."
+		},
+		CorrectAnswer = "A",
+	},
+	{
+		Id = 47,
+		Text = "W której z wymienionych niebezpiecznych sytuacji na drodze najlepiej sprawdzi się pojazd wyposażony w tzw. ASR, czyli układ zapobiegający poślizgowi kół napędzanych podczas ruszania?",
+		Type = "Specialist",
+		Points = 3,
+		ImageId = DEFAULT_IMAGE,
+		Options = {
+			A = "W sytuacji zjeżdżania ze wzniesienia.",
+			B = "W sytuacji zjeżdżania ze wzniesienia drogą o dużym natężeniu ruchu.",
+			C = "W sytuacji nagłego przyspieszenia na mokrej nawierzchni."
+		},
+		CorrectAnswer = "C",
+	},
+	{
+		Id = 48,
+		Text = "Jak, w przybliżeniu, wzrasta długość drogi hamowania pojazdu przy dwukrotnie większej prędkości?",
+		Type = "Specialist",
+		Points = 3,
+		ImageId = "rbxassetid://120080225087126",
+		Options = {
+			A = "Czterokrotnie.",
+			B = "Trzykrotnie.",
+			C = "Dwukrotnie."
+		},
+		CorrectAnswer = "A",
+	},
+}
+
+local function copyOptions(options)
+	if type(options) ~= "table" then
+		return nil
+	end
+
+	local copy = {}
+	for key, value in pairs(options) do
+		copy[key] = value
+	end
+	return copy
+end
+
+local module = {}
+
+function module.GetAllQuestions()
+	local copy = table.create(#Questions)
+	for index, question in ipairs(Questions) do
+		copy[index] = {
+			Id = question.Id,
+			Text = question.Text,
+			Type = question.Type,
+			Points = question.Points,
+			ImageId = question.ImageId,
+			Options = copyOptions(question.Options),
+			CorrectAnswer = question.CorrectAnswer,
+		}
+	end
+	return copy
+end
+
+module.Questions = Questions
+
+return module
