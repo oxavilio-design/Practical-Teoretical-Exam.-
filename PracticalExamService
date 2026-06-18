@@ -1,0 +1,1045 @@
+local PracticalExamService = {}
+
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local ServerStorage = game:GetService("ServerStorage")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local DataStoreService = game:GetService("DataStoreService")
+local RunService = game:GetService("RunService")
+local CollectionService = game:GetService("CollectionService")
+
+local Config = require(script.Parent:WaitForChild("PracticalExamConfig"))
+
+local theoryStore = DataStoreService:GetDataStore(Config.TheoryStoreName)
+local practicalStore = DataStoreService:GetDataStore(Config.PracticalStoreName)
+
+local remotesFolder = ReplicatedStorage:FindFirstChild("PracticalExamRemotes")
+if not remotesFolder then
+	remotesFolder = Instance.new("Folder")
+	remotesFolder.Name = "PracticalExamRemotes"
+	remotesFolder.Parent = ReplicatedStorage
+end
+
+local stateRemote = remotesFolder:FindFirstChild(Config.StatusRemoteName)
+if not stateRemote then
+	stateRemote = Instance.new("RemoteEvent")
+	stateRemote.Name = Config.StatusRemoteName
+	stateRemote.Parent = remotesFolder
+end
+
+local courseFolder = Workspace:WaitForChild(Config.CourseFolderName)
+local vehicleTemplate = ServerStorage:WaitForChild(Config.VehicleTemplateName)
+
+local points = {}
+local activeSessions = {}
+local queue = {}
+local queuedByUserId = {}
+local yardReservedByUserId = nil
+
+local function send(player, action, payload)
+	stateRemote:FireClient(player, {
+		Action = action,
+		Payload = payload,
+	})
+end
+
+local function setStatus(player, text)
+	send(player, "SetStatus", text)
+end
+
+local function showGui(player, guiName)
+	send(player, "ShowGui", guiName)
+end
+
+local function hideGui(player, guiName)
+	send(player, "HideGui", guiName)
+end
+
+local function findPartByName(root, partName)
+	local object = root:FindFirstChild(partName, true)
+	if object and object:IsA("BasePart") then
+		return object
+	end
+	return nil
+end
+
+local function waitForPoints()
+	for key, partName in pairs(Config.PointNames) do
+		local part = courseFolder:WaitForChild(partName)
+		assert(part:IsA("BasePart"), ("Course point %s must be a BasePart"):format(partName))
+		points[key] = part
+	end
+end
+
+local function getDriverSeat(vehicle)
+	local preferred = vehicle:FindFirstChild("DriverSeat", true)
+	if preferred and preferred:IsA("VehicleSeat") then
+		return preferred
+	end
+
+	for _, descendant in ipairs(vehicle:GetDescendants()) do
+		if descendant:IsA("VehicleSeat") then
+			return descendant
+		end
+	end
+
+	return nil
+end
+
+local function getRootPart(vehicle)
+	if vehicle.PrimaryPart and vehicle.PrimaryPart:IsA("BasePart") then
+		return vehicle.PrimaryPart
+	end
+
+	local seat = getDriverSeat(vehicle)
+	if seat then
+		return seat
+	end
+
+	for _, descendant in ipairs(vehicle:GetDescendants()) do
+		if descendant:IsA("BasePart") then
+			return descendant
+		end
+	end
+
+	return nil
+end
+
+local function setServerOwnership(vehicle)
+	for _, descendant in ipairs(vehicle:GetDescendants()) do
+		if descendant:IsA("BasePart") then
+			pcall(function()
+				descendant:SetNetworkOwner(nil)
+			end)
+		end
+	end
+end
+
+local function zeroVehicleMotion(vehicle)
+	for _, descendant in ipairs(vehicle:GetDescendants()) do
+		if descendant:IsA("BasePart") then
+			descendant.AssemblyLinearVelocity = Vector3.zero
+			descendant.AssemblyAngularVelocity = Vector3.zero
+		end
+	end
+end
+
+local function readControlState(vehicle, controlName)
+	local names = Config.ControlNames[controlName]
+	if not names then
+		return nil
+	end
+
+	for _, name in ipairs(names) do
+		local attribute = vehicle:GetAttribute(name)
+		if typeof(attribute) == "boolean" then
+			return attribute
+		end
+
+		local object = vehicle:FindFirstChild(name, true)
+		if object then
+			if object:IsA("BoolValue") then
+				return object.Value
+			elseif object:IsA("IntValue") or object:IsA("NumberValue") then
+				return object.Value ~= 0
+			elseif object:IsA("StringValue") then
+				local value = string.lower(object.Value)
+				return value == "true" or value == "on" or value == "1"
+			end
+		end
+	end
+
+	return false
+end
+
+local function writeControlState(vehicle, controlName, value)
+	local names = Config.ControlNames[controlName]
+	if not names then
+		return
+	end
+
+	for _, name in ipairs(names) do
+		local object = vehicle:FindFirstChild(name, true)
+		if object then
+			if object:IsA("BoolValue") then
+				object.Value = value
+				return
+			elseif object:IsA("IntValue") or object:IsA("NumberValue") then
+				object.Value = value and 1 or 0
+				return
+			elseif object:IsA("StringValue") then
+				object.Value = value and "true" or "false"
+				return
+			end
+		end
+	end
+
+	for _, name in ipairs(names) do
+		vehicle:SetAttribute(name, value)
+	end
+end
+
+local function getCurrencyValue(player)
+	local leaderstats = player:FindFirstChild("leaderstats")
+	if not leaderstats then
+		return nil
+	end
+
+	local preferredNames = { "Money", "Cash" }
+	for _, name in ipairs(preferredNames) do
+		local valueObject = leaderstats:FindFirstChild(name)
+		if valueObject and (valueObject:IsA("IntValue") or valueObject:IsA("NumberValue")) then
+			return valueObject
+		end
+	end
+
+	return nil
+end
+
+local function chargeExamFee(player)
+	local currencyValue = getCurrencyValue(player)
+	if not currencyValue then
+		return false, "Currency value not found."
+	end
+
+	if currencyValue.Value < Config.ExamFee then
+		return false, "Insufficient funds."
+	end
+
+	currencyValue.Value -= Config.ExamFee
+	return true
+end
+
+local function hasPassedTheory(player)
+	local key = "Player_" .. player.UserId
+
+	for attempt = 1, 3 do
+		local success, result = pcall(function()
+			return theoryStore:GetAsync(key)
+		end)
+
+		if success then
+			if type(result) == "boolean" then
+				return result
+			elseif type(result) == "table" then
+				if result.TheoryPassed == true or result.passed == true or result.Passed == true then
+					return true
+				end
+			end
+			return false
+		end
+
+		task.wait(0.3 * attempt)
+	end
+
+	return nil
+end
+
+local function savePracticalPass(player, session)
+	local key = "Player_" .. player.UserId
+	local payload = {
+		Passed = true,
+		PassedAt = os.time(),
+		Mistakes = session.mistakes,
+	}
+
+	for attempt = 1, 3 do
+		local success = pcall(function()
+			practicalStore:UpdateAsync(key, function(old)
+				old = typeof(old) == "table" and old or {}
+				old.Passed = true
+				old.PassedAt = payload.PassedAt
+				old.Mistakes = payload.Mistakes
+				return old
+			end)
+		end)
+
+		if success then
+			return true
+		end
+
+		task.wait(0.35 * attempt)
+	end
+
+	return false
+end
+
+local function getPlayerFromVehicle(vehicle)
+	local session = nil
+	for _, candidate in pairs(activeSessions) do
+		if candidate.vehicle == vehicle then
+			session = candidate
+			break
+		end
+	end
+
+	if not session then
+		return nil
+	end
+
+	local seat = session.driverSeat
+	if not seat or not seat.Occupant then
+		return nil
+	end
+
+	local humanoid = seat.Occupant
+	local character = humanoid.Parent
+	if not character then
+		return nil
+	end
+
+	return Players:GetPlayerFromCharacter(character)
+end
+
+local function getSessionFromPlayer(player)
+	return activeSessions[player.UserId]
+end
+
+local function releaseYardLock(session)
+	if yardReservedByUserId == session.player.UserId then
+		yardReservedByUserId = nil
+	end
+end
+
+local function destroyVehicle(session)
+	if session.vehicle and session.vehicle.Parent then
+		session.vehicle:Destroy()
+	end
+	session.vehicle = nil
+	session.driverSeat = nil
+end
+
+local function cleanupSession(session)
+	if session.cleanupDone then
+		return
+	end
+
+	session.cleanupDone = true
+	releaseYardLock(session)
+	destroyVehicle(session)
+	activeSessions[session.player.UserId] = nil
+end
+
+local function resetVehicleToPoint(session, pointPart)
+	if not session.vehicle or not pointPart then
+		return
+	end
+
+	session.vehicle:PivotTo(pointPart.CFrame + Vector3.new(0, 3.5, 0))
+	zeroVehicleMotion(session.vehicle)
+	setServerOwnership(session.vehicle)
+end
+
+local function seatPlayerInVehicle(session)
+	local player = session.player
+	local character = player.Character
+	if not character then
+		return false
+	end
+
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		return false
+	end
+
+	local seat = session.driverSeat
+	if not seat then
+		return false
+	end
+
+	character:PivotTo(session.vehicle:GetPivot() + Vector3.new(0, 2, 0))
+	task.wait(0.05)
+	seat:Sit(humanoid)
+	task.wait(0.05)
+
+	return seat.Occupant == humanoid
+end
+
+local function spawnVehicleForSession(session)
+	local spawnPart = courseFolder:FindFirstChild(Config.VehicleSpawnPartName, true)
+	if not spawnPart or not spawnPart:IsA("BasePart") then
+		spawnPart = points.A
+	end
+
+	local vehicle = vehicleTemplate:Clone()
+	vehicle.Name = ("PracticalExamVehicle_%d"):format(session.player.UserId)
+	vehicle.Parent = Workspace
+
+	if not vehicle.PrimaryPart then
+		local seat = getDriverSeat(vehicle)
+		if seat then
+			vehicle.PrimaryPart = seat
+		else
+			local root = getRootPart(vehicle)
+			if root then
+				vehicle.PrimaryPart = root
+			end
+		end
+	end
+
+	local driverSeat = getDriverSeat(vehicle)
+	if not driverSeat then
+		vehicle:Destroy()
+		return nil, "Driver seat not found in vehicle template."
+	end
+
+	session.vehicle = vehicle
+	session.driverSeat = driverSeat
+
+	vehicle:SetAttribute("PracticalExamVehicle", true)
+	vehicle:SetAttribute("PracticalExamOwnerUserId", session.player.UserId)
+
+	vehicle:PivotTo(spawnPart.CFrame + Vector3.new(0, 3.5, 0))
+	zeroVehicleMotion(vehicle)
+	setServerOwnership(vehicle)
+
+	task.wait(0.1)
+
+	if not seatPlayerInVehicle(session) then
+		vehicle:Destroy()
+		session.vehicle = nil
+		session.driverSeat = nil
+		return nil, "Could not seat the player in the exam vehicle."
+	end
+
+	return vehicle
+end
+
+local function shuffleArray(input)
+	local output = table.clone(input)
+	for index = #output, 2, -1 do
+		local swapIndex = math.random(1, index)
+		output[index], output[swapIndex] = output[swapIndex], output[index]
+	end
+	return output
+end
+
+local function getCurrentSpeed(vehicle)
+	local root = getRootPart(vehicle)
+	if not root then
+		return 0
+	end
+	return root.AssemblyLinearVelocity.Magnitude
+end
+
+local function isVehicleStationary(vehicle, maxSpeed)
+	return getCurrentSpeed(vehicle) <= maxSpeed
+end
+
+local function isVehicleParked(session)
+	if not session.vehicle then
+		return false
+	end
+
+	local parked = isVehicleStationary(session.vehicle, 2.5)
+	local handBrakeOn = readControlState(session.vehicle, "HandBrake")
+	local zone = CollectionService:GetTagged(Config.Tags.ParkingZone)
+
+	local insideParkingZone = false
+	if #zone > 0 then
+		local root = getRootPart(session.vehicle)
+		if root then
+			for _, part in ipairs(zone) do
+				if part:IsA("BasePart") and (root.Position - part.Position).Magnitude <= math.max(part.Size.X, part.Size.Z) * 0.6 then
+					insideParkingZone = true
+					break
+				end
+			end
+		end
+	else
+		local root = getRootPart(session.vehicle)
+		if root then
+			insideParkingZone = (root.Position - points.F.Position).Magnitude <= 10
+		end
+	end
+
+	return parked and handBrakeOn and insideParkingZone
+end
+
+local function setStage(session, stageName, message)
+	session.stage = stageName
+	if message then
+		setStatus(session.player, message)
+	end
+end
+
+local function incrementMistake(session, reason, resetPointName)
+	session.mistakes += 1
+	setStatus(session.player, ("Mistake %d/%d: %s"):format(session.mistakes, Config.MaxMistakes, reason))
+
+	if session.mistakes >= Config.MaxMistakes then
+		PracticalExamService.FailExam(session, "Maximum number of mistakes exceeded.")
+		return
+	end
+
+	if resetPointName then
+		resetVehicleToPoint(session, points[resetPointName])
+	end
+end
+
+function PracticalExamService.FailExam(session, reason)
+	if session.finished then
+		return
+	end
+
+	session.finished = true
+	setStatus(session.player, "Practical exam failed: " .. reason)
+	showGui(session.player, Config.EventGuiName)
+
+	task.delay(0.2, function()
+		local player = session.player
+		cleanupSession(session)
+		if player and player.Parent then
+			player:LoadCharacter()
+		end
+	end)
+end
+
+function PracticalExamService.FinishExam(session)
+	if session.finished then
+		return
+	end
+
+	session.finished = true
+	setStatus(session.player, "Practical exam passed. Saving result...")
+	local saved = savePracticalPass(session.player, session)
+
+	if saved then
+		setStatus(session.player, "Practical exam passed successfully.")
+	else
+		setStatus(session.player, "Practical exam passed, but saving to DataStore failed.")
+	end
+
+	task.delay(1.0, function()
+		local player = session.player
+		cleanupSession(session)
+		if player and player.Parent then
+			player:LoadCharacter()
+		end
+	end)
+end
+
+local function beginCityPhase(session)
+	if not session.yardReleased then
+		session.yardReleased = true
+		releaseYardLock(session)
+		task.defer(function()
+			PracticalExamService.ProcessQueue()
+		end)
+	end
+
+	setStage(session, "City", "Drive to the city and obey road rules.")
+	session.requiredTurn = nil
+	session.requiredTurnConsumed = false
+end
+
+local function startHillPhase(session)
+	setStage(session, "Hill", "Release the handbrake and drive uphill without rolling back.")
+	session.hillStartPosition = getRootPart(session.vehicle) and getRootPart(session.vehicle).Position or points.C.Position
+	session.hillForwardVector = (points.D.Position - points.C.Position).Unit
+	writeControlState(session.vehicle, "HandBrake", true)
+end
+
+local function startArcReverse(session)
+	setStage(session, "ArcReverse", "Reverse back to checkpoint A.")
+end
+
+local function startArcForward(session)
+	setStage(session, "ArcForward", "Drive through the arc to checkpoint B. Do not touch any line or cone.")
+end
+
+local function startPreCheck(session)
+	setStage(session, "PreCheck", "Perform the pre-check. Follow the instructions in order.")
+	session.preCheckTasks = shuffleArray(Config.PreCheckTasks)
+	session.preCheckIndex = 1
+	session.stationaryAnchor = getRootPart(session.vehicle) and getRootPart(session.vehicle).Position or points.A.Position
+	session.preCheckViolationCooldown = 0
+
+	writeControlState(session.vehicle, "LeftIndicator", false)
+	writeControlState(session.vehicle, "RightIndicator", false)
+	writeControlState(session.vehicle, "HazardLights", false)
+	writeControlState(session.vehicle, "HandBrake", true)
+
+	setStatus(session.player, session.preCheckTasks[1].Instruction)
+end
+
+local function startExamForPlayer(player)
+	if activeSessions[player.UserId] then
+		return false, "Player already has an active exam session."
+	end
+
+	local theoryPassed = hasPassedTheory(player)
+	if theoryPassed == nil then
+		showGui(player, Config.EventGuiName)
+		setStatus(player, "Could not verify theory progress. Try again later.")
+		return false, "Theory status could not be read."
+	end
+
+	if not theoryPassed then
+		showGui(player, Config.EventGuiName)
+		setStatus(player, "You must pass the theoretical exam before starting the practical exam.")
+		return false, "Theory not passed."
+	end
+
+	local feeCharged, feeError = chargeExamFee(player)
+	if not feeCharged then
+		showGui(player, Config.NotEnoughMoneyGuiName)
+		setStatus(player, "Not enough money for the practical exam.")
+		return false, feeError
+	end
+
+	if yardReservedByUserId and yardReservedByUserId ~= player.UserId then
+		if queuedByUserId[player.UserId] then
+			setStatus(player, "The exam yard is occupied. You are already in the queue.")
+			return true
+		end
+
+		table.insert(queue, player.UserId)
+		queuedByUserId[player.UserId] = true
+		setStatus(player, "The exam yard is occupied. You have been placed in the queue.")
+		showGui(player, Config.StatusGuiName)
+		return true
+	end
+
+	local session = {
+		player = player,
+		mistakes = 0,
+		stage = "Spawning",
+		finished = false,
+		cleanupDone = false,
+		yardReleased = false,
+		requiredTurn = nil,
+		requiredTurnConsumed = false,
+		lastTouchAt = {},
+		hillForwardVector = nil,
+		hillStartPosition = nil,
+		preCheckTasks = {},
+		preCheckIndex = 1,
+		stationaryAnchor = nil,
+		preCheckViolationCooldown = 0,
+		accumulator = 0,
+	}
+
+	activeSessions[player.UserId] = session
+	yardReservedByUserId = player.UserId
+
+	showGui(player, Config.StatusGuiName)
+	hideGui(player, Config.EventGuiName)
+	setStatus(player, "Spawning exam vehicle...")
+
+	local vehicle, spawnError = spawnVehicleForSession(session)
+	if not vehicle then
+		setStatus(player, "Failed to spawn the exam vehicle: " .. tostring(spawnError))
+		PracticalExamService.FailExam(session, "Vehicle spawn failed.")
+		return false, spawnError
+	end
+
+	task.wait(0.15)
+	startPreCheck(session)
+	return true
+end
+
+function PracticalExamService.RequestStartExam(player)
+	local session = activeSessions[player.UserId]
+	if session then
+		setStatus(player, "You already have an active practical exam.")
+		showGui(player, Config.StatusGuiName)
+		return
+	end
+
+	if queuedByUserId[player.UserId] then
+		setStatus(player, "You are already queued for the practical exam.")
+		showGui(player, Config.StatusGuiName)
+		return
+	end
+
+	local ok, err = startExamForPlayer(player)
+	if not ok then
+		return
+	end
+end
+
+function PracticalExamService.ProcessQueue()
+	if yardReservedByUserId ~= nil then
+		return
+	end
+
+	while #queue > 0 do
+		local userId = table.remove(queue, 1)
+		queuedByUserId[userId] = nil
+
+		local player = Players:GetPlayerByUserId(userId)
+		if player and player.Parent then
+			local ok = startExamForPlayer(player)
+			if ok then
+				return
+			end
+		end
+	end
+end
+
+local function handlePreCheck(session)
+	if not session.vehicle then
+		PracticalExamService.FailExam(session, "Vehicle missing during pre-check.")
+		return
+	end
+
+	local speed = getCurrentSpeed(session.vehicle)
+	local movedDistance = 0
+	local root = getRootPart(session.vehicle)
+	if root and session.stationaryAnchor then
+		movedDistance = (root.Position - session.stationaryAnchor).Magnitude
+	end
+
+	if speed > Config.MoveSpeedTolerance or movedDistance > Config.PreCheckMoveTolerance then
+		if os.clock() - session.preCheckViolationCooldown >= 1.25 then
+			session.preCheckViolationCooldown = os.clock()
+			incrementMistake(session, "The vehicle moved during the pre-check.", "A")
+			session.stationaryAnchor = getRootPart(session.vehicle) and getRootPart(session.vehicle).Position or points.A.Position
+		end
+		return
+	end
+
+	local currentTask = session.preCheckTasks[session.preCheckIndex]
+	if not currentTask then
+		startArcForward(session)
+		return
+	end
+
+	local isOn = readControlState(session.vehicle, currentTask.Id)
+	if isOn == currentTask.Expected then
+		session.preCheckIndex += 1
+		local nextTask = session.preCheckTasks[session.preCheckIndex]
+		if nextTask then
+			setStatus(session.player, nextTask.Instruction)
+		else
+			startArcForward(session)
+		end
+	end
+end
+
+local function handleArcForwardSession(session, touchedPointName)
+	if touchedPointName == "B" then
+		startArcReverse(session)
+	end
+end
+
+local function handleArcReverseSession(session, touchedPointName)
+	if touchedPointName == "A" then
+		resetVehicleToPoint(session, points.C)
+		startHillPhase(session)
+	end
+end
+
+local function handleHillSession(session, touchedPointName)
+	if touchedPointName == "D" then
+		beginCityPhase(session)
+	end
+end
+
+local function handleCityPoint(session, touchedPointName)
+	if touchedPointName == "Left" then
+		session.requiredTurn = "Left"
+		session.requiredTurnConsumed = false
+		setStatus(session.player, "At the next intersection, turn left and use the left indicator.")
+	elseif touchedPointName == "Right" then
+		session.requiredTurn = "Right"
+		session.requiredTurnConsumed = false
+		setStatus(session.player, "At the next intersection, turn right and use the right indicator.")
+	elseif touchedPointName == "E" then
+		setStatus(session.player, "Return to the yard and prepare to park.")
+	elseif touchedPointName == "F" then
+		if isVehicleParked(session) then
+			PracticalExamService.FinishExam(session)
+		else
+			PracticalExamService.FailExam(session, "Final parking was incorrect.")
+		end
+	end
+end
+
+local function handleTurnCheck(session, direction)
+	if not session.requiredTurn then
+		return
+	end
+
+	if session.requiredTurn ~= direction then
+		incrementMistake(session, ("Wrong turn direction. Expected %s."):format(session.requiredTurn))
+		return
+	end
+
+	local requiredControl = direction == "Left" and "LeftIndicator" or "RightIndicator"
+	if not readControlState(session.vehicle, requiredControl) then
+		incrementMistake(session, ("Missing %s indicator for the turn."):format(direction:lower()))
+		return
+	end
+
+	session.requiredTurn = nil
+	session.requiredTurnConsumed = true
+	setStatus(session.player, ("Correct %s turn. Continue driving."):format(direction:lower()))
+end
+
+local function handleTaggedPartTouch(tagName, partName, part, hit)
+	local vehicle = hit:FindFirstAncestorOfClass("Model")
+	if not vehicle then
+		return
+	end
+
+	if not vehicle:GetAttribute("PracticalExamVehicle") then
+		return
+	end
+
+	local session = nil
+	for _, candidate in pairs(activeSessions) do
+		if candidate.vehicle == vehicle then
+			session = candidate
+			break
+		end
+	end
+
+	if not session or session.finished then
+		return
+	end
+
+	local now = os.clock()
+	session.lastTouchAt[part] = session.lastTouchAt[part] or 0
+	if now - session.lastTouchAt[part] < Config.ZoneDebounce then
+		return
+	end
+	session.lastTouchAt[part] = now
+
+	if tagName == Config.Tags.SolidLine then
+		if session.stage == "PreCheck" or session.stage == "ArcForward" or session.stage == "ArcReverse" or session.stage == "Hill" then
+			incrementMistake(session, "Crossed a solid line.", session.stage == "Hill" and "C" or "A")
+		else
+			incrementMistake(session, "Crossed a solid line.")
+		end
+	elseif tagName == Config.Tags.Cone then
+		if session.stage == "PreCheck" or session.stage == "ArcForward" or session.stage == "ArcReverse" or session.stage == "Hill" then
+			incrementMistake(session, "Hit a cone.", session.stage == "Hill" and "C" or "A")
+		else
+			incrementMistake(session, "Hit a cone.")
+		end
+	elseif tagName == Config.Tags.LeftTurnCheck then
+		handleTurnCheck(session, "Left")
+	elseif tagName == Config.Tags.RightTurnCheck then
+		handleTurnCheck(session, "Right")
+	elseif tagName == Config.Tags.ParkingZone then
+		-- Parking zone is validated through Exam_F.
+	end
+end
+
+local function bindTaggedParts(tagName)
+	for _, instance in ipairs(CollectionService:GetTagged(tagName)) do
+		if instance:IsA("BasePart") then
+			instance.Touched:Connect(function(hit)
+				handleTaggedPartTouch(tagName, instance.Name, instance, hit)
+			end)
+		end
+	end
+
+	CollectionService:GetInstanceAddedSignal(tagName):Connect(function(instance)
+		if instance:IsA("BasePart") then
+			instance.Touched:Connect(function(hit)
+				handleTaggedPartTouch(tagName, instance.Name, instance, hit)
+			end)
+		end
+	end)
+end
+
+local function bindCheckpoint(partName, callback)
+	local checkpoint = courseFolder:FindFirstChild(partName, true)
+	if not checkpoint or not checkpoint:IsA("BasePart") then
+		error(("Missing checkpoint part: %s"):format(partName))
+	end
+
+	checkpoint.Touched:Connect(function(hit)
+		local vehicle = hit:FindFirstAncestorOfClass("Model")
+		if not vehicle or not vehicle:GetAttribute("PracticalExamVehicle") then
+			return
+		end
+
+		local session = nil
+		for _, candidate in pairs(activeSessions) do
+			if candidate.vehicle == vehicle then
+				session = candidate
+				break
+			end
+		end
+
+		if not session or session.finished then
+			return
+		end
+
+		local now = os.clock()
+		session.lastTouchAt[checkpoint] = session.lastTouchAt[checkpoint] or 0
+		if now - session.lastTouchAt[checkpoint] < Config.ZoneDebounce then
+			return
+		end
+		session.lastTouchAt[checkpoint] = now
+
+		callback(session)
+	end)
+end
+
+local function bindCheckpoints()
+	bindCheckpoint(Config.PointNames.B, function(session)
+		if session.stage == "ArcForward" then
+			startArcReverse(session)
+		end
+	end)
+
+	bindCheckpoint(Config.PointNames.A, function(session)
+		if session.stage == "ArcReverse" then
+			resetVehicleToPoint(session, points.C)
+			startHillPhase(session)
+		end
+	end)
+
+	bindCheckpoint(Config.PointNames.D, function(session)
+		if session.stage == "Hill" then
+			beginCityPhase(session)
+		end
+	end)
+
+	bindCheckpoint(Config.PointNames.Left, function(session)
+		if session.stage == "City" then
+			handleCityPoint(session, "Left")
+		end
+	end)
+
+	bindCheckpoint(Config.PointNames.Right, function(session)
+		if session.stage == "City" then
+			handleCityPoint(session, "Right")
+		end
+	end)
+
+	bindCheckpoint(Config.PointNames.E, function(session)
+		if session.stage == "City" then
+			handleCityPoint(session, "E")
+		end
+	end)
+
+	bindCheckpoint(Config.PointNames.F, function(session)
+		if session.stage == "City" then
+			handleCityPoint(session, "F")
+		end
+	end)
+end
+
+local function heartbeatStep()
+	for userId, session in pairs(activeSessions) do
+		if session.finished then
+			continue
+		end
+
+		local player = session.player
+		if not player or not player.Parent then
+			cleanupSession(session)
+			continue
+		end
+
+		local character = player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if not humanoid or humanoid.Health <= 0 then
+			PracticalExamService.FailExam(session, "The driver left the vehicle or died during the exam.")
+			continue
+		end
+
+		if not session.vehicle or not session.vehicle.Parent then
+			PracticalExamService.FailExam(session, "The exam vehicle is missing.")
+			continue
+		end
+
+		local seat = session.driverSeat
+		if not seat or not seat.Occupant then
+			PracticalExamService.FailExam(session, "The driver left the seat.")
+			continue
+		end
+
+		if seat.Occupant.Parent ~= character then
+			PracticalExamService.FailExam(session, "Another humanoid occupied the exam vehicle.")
+			continue
+		end
+
+		session.accumulator += Config.HeartbeatStep
+		if session.accumulator < Config.HeartbeatStep then
+			continue
+		end
+		session.accumulator = 0
+
+		for _, descendant in ipairs(session.vehicle:GetDescendants()) do
+			if descendant:IsA("BasePart") then
+				pcall(function()
+					descendant:SetNetworkOwner(nil)
+				end)
+			end
+		end
+
+		if session.stage == "PreCheck" then
+			handlePreCheck(session)
+		elseif session.stage == "ArcForward" then
+			if getCurrentSpeed(session.vehicle) > 1 then
+				-- No special speed rule here; line and cone hits are the main violations.
+			end
+		elseif session.stage == "ArcReverse" then
+			if getCurrentSpeed(session.vehicle) > 1 then
+				-- Reverse exercise is validated by checkpoint A and collision checks.
+			end
+		elseif session.stage == "Hill" then
+			local root = getRootPart(session.vehicle)
+			if root and session.hillStartPosition and session.hillForwardVector then
+				local delta = root.Position - session.hillStartPosition
+				local forwardDistance = delta:Dot(session.hillForwardVector)
+				if forwardDistance < -Config.RollbackTolerance then
+					incrementMistake(session, "The vehicle rolled backward on the hill.", "C")
+					session.hillStartPosition = root.Position
+				end
+			end
+		elseif session.stage == "City" then
+			local speed = getCurrentSpeed(session.vehicle)
+			if speed > Config.CitySpeedLimitStudsPerSecond then
+				if not session.speedingFlag then
+					session.speedingFlag = true
+					incrementMistake(session, "Speed limit exceeded in the city.")
+				end
+			else
+				session.speedingFlag = false
+			end
+		end
+	end
+end
+
+function PracticalExamService.Start()
+	waitForPoints()
+	bindCheckpoints()
+	bindTaggedParts(Config.Tags.SolidLine)
+	bindTaggedParts(Config.Tags.Cone)
+	bindTaggedParts(Config.Tags.LeftTurnCheck)
+	bindTaggedParts(Config.Tags.RightTurnCheck)
+	bindTaggedParts(Config.Tags.ParkingZone)
+
+	Players.PlayerRemoving:Connect(function(player)
+		if queuedByUserId[player.UserId] then
+			queuedByUserId[player.UserId] = nil
+			for index = #queue, 1, -1 do
+				if queue[index] == player.UserId then
+					table.remove(queue, index)
+				end
+			end
+		end
+
+		local session = activeSessions[player.UserId]
+		if session then
+			cleanupSession(session)
+		end
+	end)
+
+	task.spawn(function()
+		while true do
+			heartbeatStep()
+			task.wait(Config.HeartbeatStep)
+		end
+	end)
+end
+
+return PracticalExamService
